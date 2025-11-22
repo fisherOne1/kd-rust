@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送以 v 开头的 tag 时触发
+
+jobs:
+  build:
+    name: Build for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: Linux x64
+            artifact: kd-linux-x64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: Windows x64
+            artifact: kd-windows-x64.exe
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macOS x64
+            artifact: kd-macos-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: macOS ARM64
+            artifact: kd-macos-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Build release binary
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_NET_OFFLINE: false
+
+      - name: Prepare binary
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp target/${{ matrix.target }}/release/kd.exe ${{ matrix.artifact }}
+          else
+            cp target/${{ matrix.target }}/release/kd ${{ matrix.artifact }}
+            chmod +x ${{ matrix.artifact }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          retention-days: 7
+
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get tag name
+        id: tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          if [ -f release/RELEASE_NOTES.md ]; then
+            cat release/RELEASE_NOTES.md > release_notes.txt
+          else
+            cat > release_notes.txt << EOF
+          # Release ${{ steps.tag.outputs.TAG_NAME }}
+          
+          ## Changes
+          - See commit history for details
+          EOF
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG_NAME }}
+          name: Release ${{ steps.tag.outputs.TAG_NAME }}
+          body_path: release_notes.txt
+          files: |
+            artifacts/kd-linux-x64
+            artifacts/kd-windows-x64.exe
+            artifacts/kd-macos-x64
+            artifacts/kd-macos-arm64
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
