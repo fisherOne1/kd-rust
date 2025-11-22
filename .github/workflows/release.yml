@@ -98,16 +98,18 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          if [ -f release/RELEASE_NOTES.md ]; then
-            cat release/RELEASE_NOTES.md > release_notes.txt
-          else
-            cat > release_notes.txt << EOF
+          cat > release_notes.txt << EOF
           # Release ${{ steps.tag.outputs.TAG_NAME }}
           
           ## Changes
-          - See commit history for details
+          See commit history for details: https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.TAG_NAME }}^...${{ steps.tag.outputs.TAG_NAME }}
+          
+          ## Downloads
+          - Linux x64: \`kd-linux-x64\`
+          - Windows x64: \`kd-windows-x64.exe\`
+          - macOS x64: \`kd-macos-x64\`
+          - macOS ARM64: \`kd-macos-arm64\`
           EOF
-          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
