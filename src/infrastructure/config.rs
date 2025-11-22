@@ -73,7 +73,12 @@ fn default_paging() -> bool {
     true
 }
 fn default_pager_command() -> String {
-    "less -RF".to_string()
+    // Windows 使用 more，Unix 系统使用 less
+    if cfg!(target_os = "windows") {
+        "more".to_string()
+    } else {
+        "less -RF".to_string()
+    }
 }
 fn default_theme() -> String {
     "temp".to_string()

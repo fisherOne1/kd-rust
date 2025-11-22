@@ -438,11 +438,23 @@ fn print_with_pager(output: &str, pager_command: &str) -> anyhow::Result<()> {
     }
 
     // Set up stdin to receive output
-    let mut child = cmd
+    let mut child = match cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            // If pager command not found, fallback to direct print
+            eprintln!(
+                "Warning: Pager '{}' not found: {}. Printing directly.",
+                parts[0], e
+            );
+            print!("{}", output);
+            return Ok(());
+        }
+    };
 
     // Write output to pager's stdin
     if let Some(mut stdin) = child.stdin.take() {

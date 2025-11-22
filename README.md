@@ -105,8 +105,11 @@ OPTIONS:
 ```toml
 # 是否使用分页器
 paging = true
-# 分页器命令，例如：less -RF / bat
-pager_command = "less -RF"
+# 分页器命令
+# Windows: 默认使用 "more"（Windows 10+ 也支持 "less" 如果已安装）
+# Linux/macOS: 默认使用 "less -RF"
+# 也可以使用其他分页器，如 "bat"（需要先安装）
+pager_command = "less -RF"  # Windows 会自动使用 "more" 作为默认值
 
 # 结果中只显示英文（英译、英文例句等）
 english_only = false
