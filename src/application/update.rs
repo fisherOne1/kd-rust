@@ -202,8 +202,8 @@ async fn migrate_data(
         // Read all data from source database in a single blocking task
         let table_clone = table.to_string();
         let source_path = source_db_path.clone();
-        let (total, rows): MigrationData = tokio::task::spawn_blocking(
-            move || -> Result<MigrationData, KdError> {
+        let (total, rows): MigrationData =
+            tokio::task::spawn_blocking(move || -> Result<MigrationData, KdError> {
                 let src_conn = Connection::open(&source_path).map_err(KdError::Sqlite)?;
 
                 // Check table existence
@@ -245,10 +245,9 @@ async fn migrate_data(
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(KdError::Sqlite)?;
                 Ok((total, rows_vec))
-            },
-        )
-        .await
-        .map_err(|e| KdError::Io(std::io::Error::other(format!("Task join error: {}", e))))??;
+            })
+            .await
+            .map_err(|e| KdError::Io(std::io::Error::other(format!("Task join error: {}", e))))??;
 
         if rows.is_empty() {
             println!("Table {} not found in source DB or empty, skipping.", table);
