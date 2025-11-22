@@ -135,32 +135,35 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
+          TAG_NAME="${{ steps.tag.outputs.TAG_NAME }}"
+          PREVIOUS_TAG="${{ steps.previous_tag.outputs.PREVIOUS_TAG }}"
+          REPO="${{ github.repository }}"
+          
           # 获取变更列表
-          if [ -n "${{ steps.previous_tag.outputs.PREVIOUS_TAG }}" ] && [ "${{ steps.previous_tag.outputs.PREVIOUS_TAG }}" != "${{ steps.tag.outputs.TAG_NAME }}" ]; then
-            CHANGES=$(git log --pretty=format:"- %s (%h)" ${{ steps.previous_tag.outputs.PREVIOUS_TAG }}..${{ steps.tag.outputs.TAG_NAME }} 2>/dev/null || echo "- See commit history for details")
-            CHANGELOG_URL="https://github.com/${{ github.repository }}/compare/${{ steps.previous_tag.outputs.PREVIOUS_TAG }}...${{ steps.tag.outputs.TAG_NAME }}"
+          if [ -n "$PREVIOUS_TAG" ] && [ "$PREVIOUS_TAG" != "$TAG_NAME" ] && [ "$PREVIOUS_TAG" != "" ]; then
+            CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$TAG_NAME" 2>/dev/null || echo "- See commit history for details")
+            CHANGELOG_URL="https://github.com/$REPO/compare/$PREVIOUS_TAG...$TAG_NAME"
           else
             CHANGES="- Initial release"
-            CHANGELOG_URL="https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG_NAME }}"
+            CHANGELOG_URL="https://github.com/$REPO/releases/tag/$TAG_NAME"
           fi
           
-          cat > release_notes.txt << EOF
-          # Release ${{ steps.tag.outputs.TAG_NAME }}
+          # 生成 release notes（使用 printf 避免 heredoc 变量替换问题）
+          {
+            echo "# Release $TAG_NAME"
+            echo ""
+            echo "## Changes"
+            echo ""
+            echo "$CHANGES"
+            echo ""
+            echo "## Downloads"
+            echo "- **Linux x64**: \`kd-linux-x64\`"
+            echo "- **Windows x64**: \`kd-windows-x64.exe\`"
+            echo "- **macOS x64**: \`kd-macos-x64\`"
+            echo "- **macOS ARM64**: \`kd-macos-arm64\`"
+          } > release_notes.txt
           
-          ## Changes
-          
-          $CHANGES
-          
-          ## Full Changelog
-          See [full changelog]($CHANGELOG_URL)
-          
-          ## Downloads
-          - **Linux x64**: \`kd-linux-x64\`
-          - **Windows x64**: \`kd-windows-x64.exe\`
-          - **macOS x64**: \`kd-macos-x64\`
-          - **macOS ARM64**: \`kd-macos-arm64\`
-          EOF
-          
+          echo "Generated release notes:"
           cat release_notes.txt
 
       - name: Prepare release files
