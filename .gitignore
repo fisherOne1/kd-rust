@@ -1,0 +1,48 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+# Note: Cargo.lock should be committed for binary projects
+
+# Cargo local configuration
+.cargo/config.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Editor backup files
+*~
+*.bak
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+*.orig
+
+# Project specific
+*.log
+*.db
+*.zip
+kd_data.db
+kd_data.zip
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+tarpaulin-report.html
+coverage/
+
+# Environment files
+.env
+.env.local
+

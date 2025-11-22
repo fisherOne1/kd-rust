@@ -1,0 +1,41 @@
+[package]
+name = "kd"
+version = "0.1.0"
+edition = "2021"
+description = "A crystal clear command-line dictionary."
+authors = ["Fisher <fisher@example.com>"]
+
+[dependencies]
+tokio = { version = "1.47", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs", "signal", "macros"] }
+clap = { version = "4.5", features = ["derive"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+tokio-rusqlite = "0.7.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+zstd = "0.13"
+dashmap = "6.1"
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+colored = "2.1"
+termcolor = "1.4"
+uuid = { version = "1.10", features = ["v4", "fast-rng", "macro-diagnostics"] }
+sha2 = "0.10"
+async-trait = "0.1"
+hex = "0.4"
+zip = "2.0"
+indicatif = "0.17"
+futures-util = "0.3"
+flate2 = "1.1.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
