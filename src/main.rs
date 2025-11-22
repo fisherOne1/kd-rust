@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize logging
     if config.logging.enable {
-        tracing_subscriber::fmt::init();
+        init_logging(&config.logging)?;
     }
 
     // Setup database path (from config or default)
@@ -98,11 +98,28 @@ async fn main() -> anyhow::Result<()> {
     let theme_name = cli.theme.as_deref().unwrap_or(config.theme.as_str());
     let theme = presentation::theme::Theme::from_name(theme_name);
 
+    // Clear screen if configured
+    if config.clear_screen {
+        clear_screen();
+    }
+
+    // Check frequency alert if configured
+    if config.freq_alert {
+        check_frequency_alert(&state).await?;
+    }
+
     // Output result
     if cli.json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        print_result(&result, &theme, config.english_only);
+        let output = format_result(&result, &theme, config.english_only, config.enable_emoji);
+
+        // Use pager if configured
+        if config.paging {
+            print_with_pager(&output, &config.pager_command)?;
+        } else {
+            print!("{}", output);
+        }
     }
 
     Ok(())
@@ -140,25 +157,123 @@ fn filter_english_translations(translations: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn print_result(
+/// Clear the terminal screen
+fn clear_screen() {
+    // ANSI escape sequence: clear screen and move cursor to top-left
+    print!("\x1B[2J\x1B[1;1H");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
+}
+
+/// Initialize logging with path and level configuration
+fn init_logging(logging: &infrastructure::config::Logging) -> anyhow::Result<()> {
+    use tracing_subscriber::EnvFilter;
+
+    let level = match logging.level.as_str() {
+        "DEBUG" => "debug",
+        "INFO" => "info",
+        "WARN" => "warn",
+        "ERROR" => "error",
+        _ => "warn",
+    };
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
+
+    if let Some(path) = &logging.path {
+        if !path.is_empty() {
+            // Log to file
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(file)
+                .init();
+            return Ok(());
+        }
+    }
+
+    // Log to stderr (default)
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+
+    Ok(())
+}
+
+/// Check query frequency and alert if too high
+async fn check_frequency_alert(_state: &AppState) -> anyhow::Result<()> {
+    use once_cell::sync::Lazy;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    // Get or create query history in state
+    // For simplicity, we'll use a static approach with a mutex
+    // In a real implementation, this should be part of AppState
+    static QUERY_HISTORY: Lazy<Mutex<VecDeque<Instant>>> =
+        Lazy::new(|| Mutex::new(VecDeque::new()));
+
+    let now = Instant::now();
+    let mut history = QUERY_HISTORY.lock().unwrap();
+
+    // Remove queries older than 1 minute
+    history.retain(|&time| now.duration_since(time) < Duration::from_secs(60));
+
+    // Check if frequency is too high (more than 30 queries per minute)
+    if history.len() >= 30 {
+        eprintln!("{}", "⚠️  查询频率过高，请稍后再试".yellow());
+        return Ok(());
+    }
+
+    // Add current query to history
+    history.push_back(now);
+
+    Ok(())
+}
+
+/// Format result as string (for pager support)
+fn format_result(
     result: &domain::model::QueryResult,
     theme: &presentation::theme::Theme,
     english_only: bool,
-) {
+    enable_emoji: bool,
+) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::new();
     // Check if query is English (used for english_only mode)
     let is_english = is_english_query(&result.query);
 
     // Query word with source indicator
     let source_indicator = match &result.source {
-        domain::model::QuerySource::OfflineDb => "[离线]",
-        domain::model::QuerySource::LocalCache => "[缓存]",
-        domain::model::QuerySource::Online(_) => "[在线]",
+        domain::model::QuerySource::OfflineDb => {
+            if enable_emoji {
+                "📚 [离线]"
+            } else {
+                "[离线]"
+            }
+        }
+        domain::model::QuerySource::LocalCache => {
+            if enable_emoji {
+                "💾 [缓存]"
+            } else {
+                "[缓存]"
+            }
+        }
+        domain::model::QuerySource::Online(_) => {
+            if enable_emoji {
+                "🌐 [在线]"
+            } else {
+                "[在线]"
+            }
+        }
     };
-    println!(
+    writeln!(
+        output,
         "{} {}",
         (theme.title)(&result.query),
         source_indicator.cyan()
-    );
+    )
+    .ok();
 
     // Pronunciation (US/UK)
     // In english_only mode, use EN/US instead of 美/英
@@ -168,7 +283,7 @@ fn print_result(
         } else {
             "美"
         };
-        println!("  {} {}", label.cyan(), (theme.pron)(pron_us));
+        writeln!(output, "  {} {}", label.cyan(), (theme.pron)(pron_us)).ok();
     }
     if let Some(pron_uk) = &result.pronunciation_uk {
         let label = if english_only && is_english {
@@ -176,12 +291,12 @@ fn print_result(
         } else {
             "英"
         };
-        println!("  {} {}", label.cyan(), (theme.pron)(pron_uk));
+        writeln!(output, "  {} {}", label.cyan(), (theme.pron)(pron_uk)).ok();
     }
     // Fallback to single pronunciation
     if result.pronunciation_us.is_none() && result.pronunciation_uk.is_none() {
         if let Some(pron) = &result.pronunciation {
-            println!("  {}", (theme.pron)(pron));
+            writeln!(output, "  {}", (theme.pron)(pron)).ok();
         }
     }
 
@@ -196,23 +311,23 @@ fn print_result(
         };
 
         if !translations_to_show.is_empty() {
-            println!();
+            writeln!(output).ok();
             for trans in &translations_to_show {
-                println!("  {}", (theme.para)(trans));
+                writeln!(output, "  {}", (theme.para)(trans)).ok();
             }
         }
     }
 
     // Collins rank
     if let Some(rank) = &result.collins_rank {
-        println!("  {}", (theme.rank)(rank));
+        writeln!(output, "  {}", (theme.rank)(rank)).ok();
     }
 
     // Collins dictionary items - format like Go version
     if !result.collins_items.is_empty() {
-        println!();
+        writeln!(output).ok();
         let cutoff = "⸺".repeat(40);
-        println!("  {}", (theme.line)(&cutoff));
+        writeln!(output, "  {}", (theme.line)(&cutoff)).ok();
 
         for (i, item) in result.collins_items.iter().enumerate() {
             // Build the item header: number. [additional] major_trans
@@ -255,38 +370,91 @@ fn print_result(
                 item_header.push_str(&(theme.collins_para)(&trans_to_show));
             }
 
-            println!("{}", item_header);
+            writeln!(output, "{}", item_header).ok();
 
             // Print examples with ≫ prefix
             // In english_only mode for English queries, only show English part (orig)
+            let prefix = if enable_emoji { "≫" } else { ">" };
             for (orig, trans) in &item.examples {
                 if english_only && is_english {
                     // Only show English sentence, skip Chinese translation
-                    println!("    ≫   {}", orig);
+                    writeln!(output, "    {}   {}", prefix, orig).ok();
                 } else {
-                    let eg_line = format!("≫   {}  {}", orig, (theme.eg)(trans));
-                    println!("    {}", eg_line);
+                    let eg_line = format!("{}   {}  {}", prefix, orig, (theme.eg)(trans));
+                    writeln!(output, "    {}", eg_line).ok();
                 }
             }
         }
     } else if !result.examples.is_empty() {
         // Fallback to simple examples if no Collins items
-        println!();
+        writeln!(output).ok();
         let cutoff = "⸺".repeat(40);
-        println!("  {}", (theme.line)(&cutoff));
+        writeln!(output, "  {}", (theme.line)(&cutoff)).ok();
 
+        let prefix = if enable_emoji { "≫" } else { ">" };
         for (i, (orig, trans)) in result.examples.iter().enumerate() {
             if english_only && is_english {
                 // Only show English sentence, skip Chinese translation
-                println!("  {}. ≫   {}", (theme.idx)(&(i + 1).to_string()), orig);
+                writeln!(
+                    output,
+                    "  {}. {}   {}",
+                    (theme.idx)(&(i + 1).to_string()),
+                    prefix,
+                    orig
+                )
+                .ok();
             } else {
-                let eg_line = format!("≫   {}  {}", orig, (theme.eg)(trans));
-                println!("  {}. {}", (theme.idx)(&(i + 1).to_string()), eg_line);
+                let eg_line = format!("{}   {}  {}", prefix, orig, (theme.eg)(trans));
+                writeln!(
+                    output,
+                    "  {}. {}",
+                    (theme.idx)(&(i + 1).to_string()),
+                    eg_line
+                )
+                .ok();
             }
         }
     }
 
-    println!();
+    writeln!(output).ok();
+    output
+}
+
+/// Print output with pager if configured
+fn print_with_pager(output: &str, pager_command: &str) -> anyhow::Result<()> {
+    use std::process::{Command, Stdio};
+
+    // Parse pager command (e.g., "less -RF" -> ["less", "-RF"])
+    let parts: Vec<&str> = pager_command.split_whitespace().collect();
+    if parts.is_empty() {
+        // Fallback to direct print if no command specified
+        print!("{}", output);
+        return Ok(());
+    }
+
+    let mut cmd = Command::new(parts[0]);
+    if parts.len() > 1 {
+        cmd.args(&parts[1..]);
+    }
+
+    // Set up stdin to receive output
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+
+    // Write output to pager's stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin.write_all(output.as_bytes())?;
+        stdin.flush()?;
+    }
+
+    // Wait for pager to finish
+    child.wait()?;
+
+    Ok(())
 }
 
 async fn print_status(state: &AppState) -> anyhow::Result<()> {
