@@ -1,9 +1,32 @@
 [package]
-name = "kd"
+name = "kd-rust"
 version = "0.1.0"
 edition = "2021"
 description = "A crystal clear command-line dictionary."
 authors = ["Fisher <fisher@example.com>"]
+license = "MIT"
+repository = "https://github.com/fisherOne1/kd-rust"
+homepage = "https://github.com/fisherOne1/kd-rust"
+documentation = "https://github.com/fisherOne1/kd-rust"
+keywords = ["dictionary", "translator", "cli", "command-line", "youdao"]
+categories = ["command-line-utilities", "text-processing"]
+
+# 排除不需要打包到 crates.io 的文件
+exclude = [
+    "release/**/*",
+    "*.log",
+    "*.db",
+    "*.zip",
+    "*.exe",
+    ".git/**/*",
+    ".idea/**/*",
+    ".vscode/**/*",
+    "target/**/*",
+]
+
+[[bin]]
+name = "kd"
+path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1.47", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs", "signal", "macros"] }

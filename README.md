@@ -21,7 +21,17 @@
 - Rust 1.70+ (推荐使用 [rustup](https://rustup.rs/) 安装)
 - Cargo (随 Rust 一起安装)
 
-### 从源码编译
+### 快速安装
+
+#### 方式 1: 使用 cargo install（推荐）
+
+```bash
+cargo install kd-rust
+```
+
+安装后即可使用 `kd` 命令。
+
+#### 方式 2: 从源码编译
 
 ```bash
 # 克隆项目
