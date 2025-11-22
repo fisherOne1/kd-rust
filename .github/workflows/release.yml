@@ -102,6 +102,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+          fetch-depth: 0  # 获取完整的 git 历史，用于生成 release notes
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -139,16 +140,27 @@ jobs:
           PREVIOUS_TAG="${{ steps.previous_tag.outputs.PREVIOUS_TAG }}"
           REPO="${{ github.repository }}"
           
+          echo "Debug info:"
+          echo "TAG_NAME: $TAG_NAME"
+          echo "PREVIOUS_TAG: $PREVIOUS_TAG"
+          echo "Current commit: $(git rev-parse HEAD)"
+          echo "Tag commit: $(git rev-parse $TAG_NAME 2>/dev/null || echo 'not found')"
+          
           # 获取变更列表
           if [ -n "$PREVIOUS_TAG" ] && [ "$PREVIOUS_TAG" != "$TAG_NAME" ] && [ "$PREVIOUS_TAG" != "" ]; then
-            CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$TAG_NAME" 2>/dev/null || echo "- See commit history for details")
-            CHANGELOG_URL="https://github.com/$REPO/compare/$PREVIOUS_TAG...$TAG_NAME"
+            echo "Getting changes from $PREVIOUS_TAG to $TAG_NAME"
+            CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$TAG_NAME" 2>&1)
+            if [ -z "$CHANGES" ]; then
+              CHANGES="- No changes found between $PREVIOUS_TAG and $TAG_NAME"
+            fi
+            echo "Changes found:"
+            echo "$CHANGES"
           else
+            echo "No previous tag found, using initial release"
             CHANGES="- Initial release"
-            CHANGELOG_URL="https://github.com/$REPO/releases/tag/$TAG_NAME"
           fi
           
-          # 生成 release notes（使用 printf 避免 heredoc 变量替换问题）
+          # 生成 release notes
           {
             echo "# Release $TAG_NAME"
             echo ""
@@ -163,6 +175,7 @@ jobs:
             echo "- **macOS ARM64**: \`kd-macos-arm64\`"
           } > release_notes.txt
           
+          echo ""
           echo "Generated release notes:"
           cat release_notes.txt
 
