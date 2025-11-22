@@ -1,6 +1,6 @@
 [package]
 name = "kd-rust"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A crystal clear command-line dictionary."
 authors = ["Fisher <fisher@example.com>"]
