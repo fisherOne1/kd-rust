@@ -95,6 +95,15 @@ jobs:
         id: tag
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Get previous tag
+        id: previous_tag
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ steps.tag.outputs.TAG_NAME }}^ 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+
       - name: Generate release notes
         id: release_notes
         run: |
@@ -102,13 +111,17 @@ jobs:
           # Release ${{ steps.tag.outputs.TAG_NAME }}
           
           ## Changes
-          See commit history for details: https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.TAG_NAME }}^...${{ steps.tag.outputs.TAG_NAME }}
+          
+          $(git log --pretty=format:"- %s (%h)" ${{ steps.previous_tag.outputs.PREVIOUS_TAG }}..${{ steps.tag.outputs.TAG_NAME }} || echo "- See commit history for details")
+          
+          ## Full Changelog
+          See [full changelog](https://github.com/${{ github.repository }}/compare/${{ steps.previous_tag.outputs.PREVIOUS_TAG }}...${{ steps.tag.outputs.TAG_NAME }})
           
           ## Downloads
-          - Linux x64: \`kd-linux-x64\`
-          - Windows x64: \`kd-windows-x64.exe\`
-          - macOS x64: \`kd-macos-x64\`
-          - macOS ARM64: \`kd-macos-arm64\`
+          - **Linux x64**: \`kd-linux-x64\`
+          - **Windows x64**: \`kd-windows-x64.exe\`
+          - **macOS x64**: \`kd-macos-x64\`
+          - **macOS ARM64**: \`kd-macos-arm64\`
           EOF
 
       - name: Create Release
