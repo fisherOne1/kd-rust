@@ -1,4 +1,4 @@
-// Main entry point
+// Main entry point for kd (kd-rust) - A crystal clear command-line dictionary
 mod application;
 mod domain;
 mod infrastructure;
@@ -48,16 +48,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Handle commands (flags)
     if cli.update_dict {
-        // Use select! to handle shutdown during update
-        tokio::select! {
-            result = application::update::update_dict(&state) => {
-                result?;
-            }
-            _ = shutdown_rx => {
-                eprintln!("更新操作被中断");
-                return Ok(());
-            }
-        }
+        handle_update_dict(&state, shutdown_rx).await?;
         return Ok(());
     }
     if cli.generate_config {
@@ -65,19 +56,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if cli.edit_config {
-        if let Some(config_path) = infrastructure::config::get_config_path() {
-            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-            let config_path_clone = config_path.clone();
-            // Run editor in blocking task
-            tokio::task::spawn_blocking(move || {
-                std::process::Command::new(editor)
-                    .arg(&config_path_clone)
-                    .status()
-            })
-            .await??;
-        } else {
-            eprintln!("{}", "Config file not found".red());
-        }
+        handle_edit_config()?;
         return Ok(());
     }
     if cli.status {
@@ -105,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Check frequency alert if configured
     if config.freq_alert {
-        check_frequency_alert(&state).await?;
+        check_frequency_alert()?;
     }
 
     // Output result
@@ -195,37 +174,6 @@ fn init_logging(logging: &infrastructure::config::Logging) -> anyhow::Result<()>
 
     // Log to stderr (default)
     tracing_subscriber::fmt().with_env_filter(filter).init();
-
-    Ok(())
-}
-
-/// Check query frequency and alert if too high
-async fn check_frequency_alert(_state: &AppState) -> anyhow::Result<()> {
-    use once_cell::sync::Lazy;
-    use std::collections::VecDeque;
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
-
-    // Get or create query history in state
-    // For simplicity, we'll use a static approach with a mutex
-    // In a real implementation, this should be part of AppState
-    static QUERY_HISTORY: Lazy<Mutex<VecDeque<Instant>>> =
-        Lazy::new(|| Mutex::new(VecDeque::new()));
-
-    let now = Instant::now();
-    let mut history = QUERY_HISTORY.lock().unwrap();
-
-    // Remove queries older than 1 minute
-    history.retain(|&time| now.duration_since(time) < Duration::from_secs(60));
-
-    // Check if frequency is too high (more than 30 queries per minute)
-    if history.len() >= 30 {
-        eprintln!("{}", "⚠️  查询频率过高，请稍后再试".yellow());
-        return Ok(());
-    }
-
-    // Add current query to history
-    history.push_back(now);
 
     Ok(())
 }
@@ -514,4 +462,62 @@ async fn sqlite3_count(db: &tokio_rusqlite::Connection) -> anyhow::Result<usize>
         .await?;
 
     Ok(count as usize)
+}
+
+/// Handle update dictionary command with graceful shutdown
+async fn handle_update_dict(
+    state: &AppState,
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+    tokio::select! {
+        result = application::update::update_dict(state) => {
+            result?;
+        }
+        _ = shutdown_rx => {
+            eprintln!("更新操作被中断");
+        }
+    }
+    Ok(())
+}
+
+/// Handle edit config command
+fn handle_edit_config() -> anyhow::Result<()> {
+    if let Some(config_path) = infrastructure::config::get_config_path() {
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+        let config_path_clone = config_path.clone();
+        // Run editor in blocking task
+        std::process::Command::new(editor)
+            .arg(&config_path_clone)
+            .status()?;
+    } else {
+        eprintln!("{}", "Config file not found".red());
+    }
+    Ok(())
+}
+
+/// Check query frequency and alert if too high (non-async version)
+fn check_frequency_alert() -> anyhow::Result<()> {
+    use once_cell::sync::Lazy;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static QUERY_HISTORY: Lazy<Mutex<VecDeque<Instant>>> =
+        Lazy::new(|| Mutex::new(VecDeque::new()));
+
+    let now = Instant::now();
+    let mut history = QUERY_HISTORY.lock().unwrap();
+
+    // Remove queries older than 1 minute
+    history.retain(|&time| now.duration_since(time) < Duration::from_secs(60));
+
+    // Check if frequency is too high (more than 30 queries per minute)
+    if history.len() >= 30 {
+        eprintln!("{}", "⚠️  查询频率过高，请稍后再试".yellow());
+    } else {
+        // Add current query to history
+        history.push_back(now);
+    }
+
+    Ok(())
 }
